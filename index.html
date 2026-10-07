@@ -1,0 +1,1305 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulation d'une Écluse</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #e8eef2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px 10px;
+      margin: 0;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    h2 { color: #263238; margin: 0 0 8px; font-size: 18px; }
+
+    /* Disposition : boutons d'options à gauche, simulation à droite */
+    .layout {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      justify-content: center;
+      width: 100%;
+      max-width: 1120px;
+    }
+    .side {
+      flex: 0 0 150px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #fff;
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+      box-sizing: border-box;
+    }
+    .side button { width: 100%; padding: 10px 8px; font-size: 12px; line-height: 1.25; }
+    .main {
+      flex: 1 1 auto;
+      min-width: 0;
+      max-width: min(900px, max(320px, calc((100vh - 215px) * 2)));
+    }
+    @media (max-width: 760px) {
+      .layout { flex-direction: column; align-items: center; }
+      .side { flex-direction: row; flex-wrap: wrap; justify-content: center; flex-basis: auto; width: 100%; }
+      .side button { width: auto; }
+      .main { width: 100%; max-width: 900px; }
+    }
+
+    /* Indicateur de niveau (compact) */
+    .levels {
+      width: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .lvl {
+      flex: 1;
+      min-width: 80px;
+      background: #fff;
+      border-radius: 6px;
+      padding: 3px 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+    }
+    .lvl-name { display: block; font-size: 9px; color: #607d8b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+    .lvl-val { display: block; font-size: 14px; font-weight: bold; color: #01579b; font-variant-numeric: tabular-nums; margin: 0 0 2px; }
+    .bar { height: 4px; background: #cfd8dc; border-radius: 2px; overflow: hidden; }
+    .fill { height: 100%; background: linear-gradient(90deg, #4fc3f7, #0277bd); width: 0; }
+    .counter { background: #fff8e1; text-align: center; display: none; }
+    .counter .lvl-val { color: #e65100; margin-bottom: 0; }
+
+    #lock-container {
+      width: 100%;
+      border: 3px solid #37474f;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+      background: #000;
+      line-height: 0;
+      box-sizing: border-box;
+    }
+    #scene { width: 100%; height: auto; display: block; }
+
+    /* Eau */
+    .wave { animation: waveMove 3s linear infinite; }
+    @keyframes waveMove { from { transform: translateX(0); } to { transform: translateX(-60px); } }
+
+    /* Nuages */
+    .cloud1 { animation: drift 90s linear infinite; }
+    .cloud2 { animation: drift 140s linear infinite; animation-delay: -60s; }
+    @keyframes drift { from { transform: translateX(-200px); } to { transform: translateX(1100px); } }
+
+    /* Portes */
+    .gate { transition: transform 0.5s ease; }
+
+    /* Vannes (clapets coulissants) */
+    .valve-hatch {
+      fill: #c62828;
+      stroke: #3e2723;
+      stroke-width: 1;
+      transition: transform 0.4s ease, fill 0.3s;
+    }
+    .valve-hatch.open { transform: translateY(-30px); fill: #00c853; }
+
+    /* Flux d'eau */
+    .flow-line {
+      stroke: rgba(255,255,255,0.75);
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-dasharray: 16 12;
+      animation: flowAnim 0.5s linear infinite;
+    }
+    @keyframes flowAnim { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -28; } }
+
+    .foam ellipse {
+      fill: rgba(255,255,255,0.75);
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: foamPulse 0.6s ease-in-out infinite alternate;
+    }
+    .foam ellipse:nth-child(2) { animation-delay: -0.2s; }
+    .foam ellipse:nth-child(3) { animation-delay: -0.4s; }
+    @keyframes foamPulse { from { transform: scale(0.7, 0.8); opacity: 0.5; } to { transform: scale(1.2, 1.3); opacity: 0.95; } }
+
+    /* Feux de signalisation */
+    .lamp { fill: #3a3f44; transition: fill 0.2s, filter 0.2s; }
+    .light-red .lamp-top { fill: #ff3d2e; filter: drop-shadow(0 0 5px #ff3d2e); }
+    .light-green .lamp-bottom { fill: #2ee66a; filter: drop-shadow(0 0 5px #2ee66a); }
+
+    /* Bateaux */
+    .boat-x { transition: transform 1.2s ease-in-out, opacity 0.4s; }
+    .boat-y { transition: transform 0.1s linear; }
+    .bob {
+      animation: bob 3s ease-in-out infinite;
+      transform-box: fill-box;
+      transform-origin: 50% 100%;
+    }
+    @keyframes bob {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50% { transform: translateY(-1.5px) rotate(0.5deg); }
+    }
+
+    /* Décor animé */
+    @keyframes swim {
+      0%   { transform: translateX(0) scaleX(1); }
+      48%  { transform: translateX(var(--r)) scaleX(1); }
+      50%  { transform: translateX(var(--r)) scaleX(-1); }
+      98%  { transform: translateX(0) scaleX(-1); }
+      100% { transform: translateX(0) scaleX(1); }
+    }
+    .swim { animation: swim var(--d, 24s) linear infinite; }
+    @keyframes drift { 0%, 100% { transform: translateY(-6px); } 50% { transform: translateY(8px); } }
+    .drift { animation: drift 5s ease-in-out infinite; }
+    @keyframes bobDuck { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1.2px); } }
+    .duck-bob { animation: bobDuck 2s ease-in-out infinite; }
+    @keyframes tailWag { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(0.5); } }
+    .tail { animation: tailWag 0.6s ease-in-out infinite; transform-box: fill-box; transform-origin: 100% 50%; }
+
+    @keyframes fly {
+      from { transform: translate(-40px, var(--y)); }
+      to   { transform: translate(940px, calc(var(--y) + 18px)); }
+    }
+    .fly { animation: fly 30s linear infinite; }
+    .fly.rev { animation-direction: reverse; }
+    @keyframes flap { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(-0.6); } }
+    .flap { animation: flap 0.5s ease-in-out infinite; }
+
+    @keyframes ride {
+      0%   { transform: translateX(-60px); }
+      62%  { transform: translateX(960px); }
+      100% { transform: translateX(960px); }
+    }
+    .ride { animation: ride 40s linear infinite; animation-delay: -3s; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 0.6s linear infinite; }
+
+    @keyframes twinkle { 50% { opacity: 0.35; } }
+    .star { animation: twinkle 3s ease-in-out infinite; }
+
+    /* Légendes */
+    .legend { display: none; pointer-events: none; }
+    #scene.show-legends .legend { display: inline; }
+
+    /* Panneaux de contrôle */
+    .controls {
+      margin-top: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      background: #ffffff;
+      padding: 10px 12px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+    }
+    button {
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      background: linear-gradient(#00897b, #00695c);
+      color: white;
+      cursor: pointer;
+      transition: background 0.2s;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button:hover { background: linear-gradient(#00796b, #004d40); }
+    button.secondary { background: linear-gradient(#546e7a, #37474f); }
+    button.secondary:hover { background: linear-gradient(#455a64, #263238); }
+    button.active { background: linear-gradient(#f9a825, #e65100); }
+    button:disabled { background: #b0bec5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+  <h2>Simulation d'une Écluse</h2>
+
+  <div class="layout">
+  <div class="side">
+    <button id="btn-reset" class="secondary">↺ Réinitialiser</button>
+    <button id="btn-dir" class="secondary">Changer de sens</button>
+    <button id="btn-mode" class="secondary">Étape 2 : plusieurs bateaux</button>
+    <button id="btn-legend" class="secondary">Afficher les légendes</button>
+    <button id="btn-sound" class="secondary">🔊 Son activé</button>
+    <button id="btn-cycle" class="secondary">🌗 Jour/nuit : activé</button>
+  </div>
+  <div class="main">
+
+  <div class="levels">
+    <div class="lvl">
+      <span class="lvl-name">Bief amont</span>
+      <span class="lvl-val" id="val-up">5,50 m</span>
+      <div class="bar"><div class="fill" id="bar-up"></div></div>
+    </div>
+    <div class="lvl">
+      <span class="lvl-name">Sas</span>
+      <span class="lvl-val" id="val-ch">2,00 m</span>
+      <div class="bar"><div class="fill" id="bar-ch"></div></div>
+    </div>
+    <div class="lvl">
+      <span class="lvl-name">Bief aval</span>
+      <span class="lvl-val" id="val-down">2,00 m</span>
+      <div class="bar"><div class="fill" id="bar-down"></div></div>
+    </div>
+    <div class="lvl counter" id="counter">
+      <span class="lvl-name">Bateaux passés</span>
+      <span class="lvl-val" id="count">0 / 4</span>
+    </div>
+  </div>
+
+  <div id="lock-container">
+    <svg id="scene" viewBox="0 0 900 440" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop id="sky-top" offset="0" stop-color="#5fa8e6"/>
+          <stop id="sky-bot" offset="1" stop-color="#d4ecf8"/>
+        </linearGradient>
+        <radialGradient id="sun">
+          <stop offset="0" stop-color="#fffbe0"/>
+          <stop offset="0.5" stop-color="#fff3a8" stop-opacity="0.8"/>
+          <stop offset="1" stop-color="#fff3a8" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#5ec2ee" stop-opacity="0.8"/>
+          <stop offset="1" stop-color="#0b4f8a" stop-opacity="0.93"/>
+        </linearGradient>
+        <linearGradient id="wallShade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#000" stop-opacity="0"/>
+          <stop offset="1" stop-color="#000" stop-opacity="0.45"/>
+        </linearGradient>
+        <linearGradient id="earth" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#7a6650"/>
+          <stop offset="1" stop-color="#4a3b2b"/>
+        </linearGradient>
+
+        <pattern id="stone" width="64" height="32" patternUnits="userSpaceOnUse">
+          <rect width="64" height="32" fill="#756e60"/>
+          <rect x="1" y="1" width="30" height="14" fill="#b3aa9a"/>
+          <rect x="33" y="1" width="30" height="14" fill="#a79e8e"/>
+          <rect x="-14" y="17" width="30" height="14" fill="#a79e8e"/>
+          <rect x="18" y="17" width="30" height="14" fill="#b6ad9d"/>
+          <rect x="50" y="17" width="30" height="14" fill="#a79e8e"/>
+        </pattern>
+        <pattern id="planks" width="16" height="25" patternUnits="userSpaceOnUse">
+          <rect width="16" height="25" fill="#7b5836"/>
+          <rect x="3" y="4" width="1" height="17" fill="#6a4a2c"/>
+          <rect x="11" y="2" width="1" height="12" fill="#8a6644"/>
+          <rect y="24" width="16" height="1" fill="#3f2a18"/>
+        </pattern>
+
+        <clipPath id="clipUp"><rect x="0" y="0" width="270" height="440"/></clipPath>
+        <clipPath id="clipCh"><rect x="270" y="0" width="360" height="440"/></clipPath>
+        <clipPath id="clipDown"><rect x="630" y="0" width="270" height="440"/></clipPath>
+        <clipPath id="gateClip"><rect x="0" y="108" width="900" height="292"/></clipPath>
+        <clipPath id="clipFlowL"><rect x="215" y="346" width="125" height="44"/></clipPath>
+        <clipPath id="clipFlowR"><rect x="560" y="346" width="140" height="44"/></clipPath>
+        <clipPath id="hullClip">
+          <path d="M2,-20 L128,-20 Q143,-20 147,-8 L137,12 Q134,16 128,16 L16,16 Q8,16 6,8 Z"/>
+        </clipPath>
+
+        <g id="gantry">
+          <rect x="-18" y="96" width="6" height="54" fill="#546e7a"/>
+          <rect x="12" y="96" width="6" height="54" fill="#546e7a"/>
+          <rect x="-22" y="90" width="44" height="9" rx="2" fill="#37474f"/>
+          <rect x="-8" y="76" width="16" height="14" rx="2" fill="#455a64"/>
+          <circle cx="0" cy="83" r="5" fill="#cfd8dc" stroke="#263238"/>
+          <line x1="-5" y1="83" x2="5" y2="83" stroke="#263238" stroke-width="1.5"/>
+          <line x1="0" y1="78" x2="0" y2="88" stroke="#263238" stroke-width="1.5"/>
+        </g>
+
+        <!-- Péniche (modèle réutilisé pour chaque bateau) -->
+        <g id="boatArt">
+          <line x1="10" y1="-20" x2="10" y2="-78" stroke="#555" stroke-width="2"/>
+          <polygon points="10,-78 28,-72 10,-66" fill="#e53935"/>
+          <path d="M2,-20 L128,-20 Q143,-20 147,-8 L137,12 Q134,16 128,16 L16,16 Q8,16 6,8 Z" style="fill: var(--hull, #1f3a5f)"/>
+          <g clip-path="url(#hullClip)">
+            <rect x="0" y="-20" width="150" height="4" fill="#f5f5f5"/>
+            <rect x="0" y="-5" width="150" height="6" style="fill: var(--stripe, #c62828)"/>
+          </g>
+          <rect x="12" y="-52" width="30" height="32" rx="2" fill="#eceff1"/>
+          <rect x="16" y="-47" width="22" height="14" fill="#7fb3d5" stroke="#546e7a"/>
+          <rect x="9" y="-56" width="36" height="5" rx="1.5" fill="#90a4ae"/>
+          <rect x="46" y="-42" width="82" height="22" rx="2" fill="#f5f5ef"/>
+          <rect x="52" y="-37" width="12" height="11" fill="#7fb3d5" stroke="#546e7a"/>
+          <rect x="70" y="-37" width="12" height="11" fill="#7fb3d5" stroke="#546e7a"/>
+          <rect x="88" y="-37" width="12" height="11" fill="#7fb3d5" stroke="#546e7a"/>
+          <rect x="106" y="-37" width="12" height="11" fill="#7fb3d5" stroke="#546e7a"/>
+          <rect x="43" y="-45" width="88" height="4" rx="1.5" fill="#b0bec5"/>
+          <rect x="98" y="-58" width="6" height="14" fill="#333"/>
+          <g fill="#111" stroke="#444">
+            <circle cx="30" cy="-10" r="3.5"/><circle cx="60" cy="-10" r="3.5"/>
+            <circle cx="90" cy="-10" r="3.5"/><circle cx="120" cy="-10" r="3.5"/>
+          </g>
+        </g>
+        <radialGradient id="lampGlow">
+          <stop offset="0" stop-color="#ffe9a0" stop-opacity="0.85"/>
+          <stop offset="1" stop-color="#ffe9a0" stop-opacity="0"/>
+        </radialGradient>
+
+        <!-- Canard (tourné vers la droite, ligne de flottaison en y = 0) -->
+        <g id="duckArt">
+          <ellipse cx="0" cy="0" rx="15" ry="2.2" fill="none" stroke="#fff" stroke-opacity="0.55"/>
+          <path d="M-10,-5 L-15,-10 L-9,-8 Z" fill="#7a5f3c"/>
+          <ellipse cx="0" cy="-4" rx="10" ry="5.5" fill="#9a7b52"/>
+          <path d="M-4,-5 Q1,-10 6,-4 Q1,-2 -4,-5 Z" fill="#6d5636"/>
+          <circle cx="8" cy="-11" r="4.5" fill="#1b6b45"/>
+          <rect x="5" y="-8.2" width="6" height="1.5" fill="#fff"/>
+          <path d="M11.5,-11 L17,-9.5 L11.5,-8.5 Z" fill="#f2a900"/>
+          <circle cx="9.5" cy="-12.2" r="0.9" fill="#111"/>
+        </g>
+
+        <!-- Poisson (tourné vers la droite) -->
+        <g id="fishArt">
+          <g class="tail"><polygon points="-10,0 -19,-6 -19,6" style="fill: var(--fc, #ff9800); filter: brightness(0.8)"/></g>
+          <path d="M-12,0 Q-4,-8 8,0 Q-4,8 -12,0 Z" style="fill: var(--fc, #ff9800)"/>
+          <path d="M-3,-4 Q0,-9 3,-4 Z" style="fill: var(--fc, #ff9800); filter: brightness(0.8)"/>
+          <circle cx="4" cy="-1.5" r="1.3" fill="#fff"/>
+          <circle cx="4.3" cy="-1.5" r="0.6" fill="#111"/>
+        </g>
+      </defs>
+
+      <!-- Ciel -->
+      <rect width="900" height="150" fill="url(#sky)"/>
+      <g id="stars" opacity="0"></g>
+      <g id="sun-g" transform="translate(760,45)">
+        <circle r="60" fill="url(#sun)"/>
+        <circle r="20" fill="#fffbe0"/>
+      </g>
+      <g id="moon-g" transform="translate(60,200)">
+        <circle r="14" fill="#f4f1de"/>
+        <circle cx="-4" cy="-3" r="3" fill="#d9d5bd" opacity="0.7"/>
+        <circle cx="5" cy="4" r="2.2" fill="#d9d5bd" opacity="0.7"/>
+        <circle cx="3" cy="-6" r="1.6" fill="#d9d5bd" opacity="0.7"/>
+      </g>
+
+      <g class="cloud1" opacity="0.9">
+        <ellipse cx="0" cy="42" rx="40" ry="12" fill="#fff"/>
+        <ellipse cx="25" cy="34" rx="28" ry="12" fill="#fff"/>
+        <ellipse cx="-22" cy="36" rx="22" ry="10" fill="#fff"/>
+      </g>
+      <g class="cloud2" opacity="0.8">
+        <ellipse cx="0" cy="78" rx="34" ry="10" fill="#fff"/>
+        <ellipse cx="20" cy="71" rx="22" ry="10" fill="#fff"/>
+      </g>
+
+      <!-- Oiseaux -->
+      <g id="birds" fill="none" stroke="#2b2b2b" stroke-width="1.6" stroke-linecap="round">
+        <g class="fly" style="--y:40px; animation-duration:32s; animation-delay:-6s"><g class="flap"><path d="M-7 0Q-3.5 -5 0 0Q3.5 -5 7 0"/></g></g>
+        <g class="fly" style="--y:62px; animation-duration:26s; animation-delay:-18s"><g class="flap" style="animation-duration:0.4s"><path d="M-6 0Q-3 -4 0 0Q3 -4 6 0"/></g></g>
+        <g class="fly rev" style="--y:24px; animation-duration:38s; animation-delay:-3s"><g class="flap" style="animation-duration:0.55s"><path d="M-8 0Q-4 -6 0 0Q4 -6 8 0"/></g></g>
+        <g class="fly" style="--y:84px; animation-duration:44s; animation-delay:-28s"><g class="flap" style="animation-duration:0.45s"><path d="M-5 0Q-2.5 -4 0 0Q2.5 -4 5 0"/></g></g>
+      </g>
+
+      <!-- Collines et arbres -->
+      <path d="M0 110 Q120 70 260 105 T520 100 T780 90 T900 100 L900 145 L0 145 Z" fill="#9cc79a"/>
+      <path d="M0 125 Q150 100 320 122 T640 118 T900 120 L900 145 L0 145 Z" fill="#7fb27a"/>
+
+      <rect x="519" y="104" width="4" height="30" fill="#5a4630"/>
+      <ellipse cx="521" cy="96" rx="9" ry="32" fill="#5b8f45"/>
+      <rect x="545" y="108" width="4" height="26" fill="#5a4630"/>
+      <ellipse cx="547" cy="98" rx="8" ry="28" fill="#4f8a3f"/>
+      <rect x="767" y="108" width="6" height="28" fill="#5a4630"/>
+      <circle cx="770" cy="98" r="20" fill="#3f7d3a"/>
+      <circle cx="781" cy="106" r="14" fill="#4f9347"/>
+      <rect x="827" y="112" width="6" height="24" fill="#5a4630"/>
+      <circle cx="830" cy="104" r="17" fill="#3f7d3a"/>
+      <circle cx="820" cy="110" r="12" fill="#4f9347"/>
+      <rect x="867" y="106" width="6" height="30" fill="#5a4630"/>
+      <circle cx="870" cy="94" r="22" fill="#468a40"/>
+
+      <!-- Maison de l'éclusier -->
+      <rect x="40" y="94" width="84" height="46" fill="#efe6d2"/>
+      <rect x="104" y="64" width="9" height="22" fill="#8b5a4a"/>
+      <polygon points="32,96 82,62 132,96" fill="#b5533c"/>
+      <rect x="60" y="112" width="14" height="28" fill="#6d4c2f"/>
+      <rect x="88" y="108" width="18" height="16" fill="#7fb3d5" stroke="#fff" stroke-width="2"/>
+      <line x1="97" y1="108" x2="97" y2="124" stroke="#fff" stroke-width="1.5"/>
+      <rect x="84" y="108" width="4" height="16" fill="#4e7d5b"/>
+      <rect x="106" y="108" width="4" height="16" fill="#4e7d5b"/>
+
+      <!-- Quai : herbe et couronnement en pierre -->
+      <rect x="0" y="134" width="900" height="14" fill="#6aa84f"/>
+      <rect x="0" y="134" width="900" height="3" fill="#7fc25f"/>
+
+      <!-- Mur du fond (maçonnerie) -->
+      <rect x="0" y="146" width="900" height="254" fill="url(#stone)"/>
+      <rect x="0" y="146" width="900" height="254" fill="url(#wallShade)"/>
+      <rect x="0" y="146" width="900" height="8" fill="#d2ccc0"/>
+      <rect x="0" y="154" width="900" height="2" fill="#4d4a42" opacity="0.5"/>
+
+      <!-- Cycliste sur le chemin de halage -->
+      <g class="ride">
+        <g transform="translate(0,131)">
+          <g transform="translate(-14,0)"><g class="spin">
+            <circle r="9" fill="none" stroke="#222" stroke-width="1.8"/>
+            <path d="M-9 0H9M0 -9V9M-6.4 -6.4L6.4 6.4M-6.4 6.4L6.4 -6.4" stroke="#777" stroke-width="0.8"/>
+          </g></g>
+          <g transform="translate(14,0)"><g class="spin">
+            <circle r="9" fill="none" stroke="#222" stroke-width="1.8"/>
+            <path d="M-9 0H9M0 -9V9M-6.4 -6.4L6.4 6.4M-6.4 6.4L6.4 -6.4" stroke="#777" stroke-width="0.8"/>
+          </g></g>
+          <g stroke="#1565c0" stroke-width="1.8" stroke-linecap="round" fill="none">
+            <path d="M-14 0L-1 0L-4 -14L-14 0M-4 -14L8 -14L-1 0M8 -14L14 0M8 -14L9 -18"/>
+          </g>
+          <line x1="-7" y1="-15" x2="-1" y2="-15" stroke="#222" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="8" y1="-18" x2="11" y2="-17" stroke="#222" stroke-width="2" stroke-linecap="round"/>
+          <!-- jambes qui pédalent -->
+          <line x1="-4" y1="-17" x2="4" y2="0" stroke="#263238" stroke-width="2.4" stroke-linecap="round">
+            <animate attributeName="x2" values="4;2.5;-1;-4.5;-6;-4.5;-1;2.5;4" dur="0.8s" repeatCount="indefinite"/>
+            <animate attributeName="y2" values="0;3.5;5;3.5;0;-3.5;-5;-3.5;0" dur="0.8s" repeatCount="indefinite"/>
+          </line>
+          <line x1="-4" y1="-17" x2="-6" y2="0" stroke="#37474f" stroke-width="2.4" stroke-linecap="round">
+            <animate attributeName="x2" values="-6;-4.5;-1;2.5;4;2.5;-1;-4.5;-6" dur="0.8s" repeatCount="indefinite"/>
+            <animate attributeName="y2" values="0;-3.5;-5;-3.5;0;3.5;5;3.5;0" dur="0.8s" repeatCount="indefinite"/>
+          </line>
+          <!-- buste, bras, tête -->
+          <line x1="-4" y1="-17" x2="3" y2="-27" stroke="#e53935" stroke-width="4" stroke-linecap="round"/>
+          <line x1="3" y1="-26" x2="10" y2="-18" stroke="#e53935" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="5" cy="-32" r="3.4" fill="#f1c9a5"/>
+          <path d="M1.8 -33 Q5 -38 8.6 -33 Z" fill="#fdd835"/>
+        </g>
+      </g>
+
+      <!-- Bornes d'amarrage -->
+      <g fill="#2b2b2b">
+        <rect x="318" y="136" width="10" height="12" rx="2"/><rect x="315" y="134" width="16" height="4" rx="2"/>
+        <rect x="572" y="136" width="10" height="12" rx="2"/><rect x="569" y="134" width="16" height="4" rx="2"/>
+      </g>
+
+      <!-- Échelles métalliques dans le sas -->
+      <g stroke="#1e1e1e" stroke-width="2">
+        <line x1="338" y1="156" x2="338" y2="400"/><line x1="352" y1="156" x2="352" y2="400"/>
+        <line x1="548" y1="156" x2="548" y2="400"/><line x1="562" y1="156" x2="562" y2="400"/>
+      </g>
+      <g stroke="#1e1e1e" stroke-width="2">
+        <path d="M338 170h14M338 190h14M338 210h14M338 230h14M338 250h14M338 270h14M338 290h14M338 310h14M338 330h14M338 350h14M338 370h14M338 390h14"/>
+        <path d="M548 170h14M548 190h14M548 210h14M548 230h14M548 250h14M548 270h14M548 290h14M548 310h14M548 330h14M548 350h14M548 370h14M548 390h14"/>
+      </g>
+
+      <!-- Échelle de niveau (graduations) sur le mur du sas -->
+      <g opacity="0.9">
+        <rect x="420" y="160" width="10" height="240" fill="#f2f2f2" opacity="0.25"/>
+        <path d="M420 180h10M420 200h10M420 220h10M420 240h10M420 260h10M420 280h10M420 300h10M420 320h10M420 340h10M420 360h10M420 380h10" stroke="#222" stroke-width="1.5"/>
+      </g>
+
+      <!-- Poissons (sous l'eau des biefs) -->
+      <g id="fishes">
+        <g transform="translate(25,250)"><g class="swim" style="--r:190px; --d:26s; animation-delay:-6s"><g class="drift"><use href="#fishArt" xlink:href="#fishArt" style="--fc:#ff9800"/></g></g></g>
+        <g transform="translate(25,305)"><g class="swim" style="--r:180px; --d:32s; animation-delay:-14s"><g class="drift" style="animation-delay:-2s"><use href="#fishArt" xlink:href="#fishArt" style="--fc:#90a4ae"/></g></g></g>
+        <g transform="translate(30,355)"><g class="swim" style="--r:190px; --d:22s; animation-delay:-7s"><g class="drift" style="animation-delay:-3.5s"><use href="#fishArt" xlink:href="#fishArt" style="--fc:#ffb74d"/></g></g></g>
+        <g transform="translate(665,352)"><g class="swim" style="--r:190px; --d:24s"><g class="drift" style="animation-delay:-1s"><use href="#fishArt" xlink:href="#fishArt" style="--fc:#ff7043"/></g></g></g>
+        <g transform="translate(670,378)"><g class="swim" style="--r:170px; --d:29s; animation-delay:-11s"><g class="drift" style="animation-delay:-4s"><use href="#fishArt" xlink:href="#fishArt" style="--fc:#b0bec5"/></g></g></g>
+      </g>
+
+      <!-- Bateaux (créés par le script) -->
+      <g id="boats"></g>
+
+      <!-- Eau amont -->
+      <g clip-path="url(#clipUp)">
+        <g id="water-upstream" style="transform: translateY(180px)">
+          <rect x="0" y="4" width="900" height="300" fill="url(#water)"/>
+          <path class="wave" fill="#7fd0f3" fill-opacity="0.85" stroke="#e8f8ff" stroke-opacity="0.6"/>
+        </g>
+      </g>
+
+      <!-- Eau du sas -->
+      <g clip-path="url(#clipCh)">
+        <g id="water-chamber" style="transform: translateY(320px)">
+          <rect x="0" y="4" width="900" height="300" fill="url(#water)"/>
+          <path class="wave" fill="#7fd0f3" fill-opacity="0.85" stroke="#e8f8ff" stroke-opacity="0.6"/>
+          <g id="foam-left" class="foam" style="display:none">
+            <ellipse cx="300" cy="2" rx="14" ry="4"/><ellipse cx="322" cy="2" rx="12" ry="3.5"/><ellipse cx="340" cy="2" rx="10" ry="3"/>
+          </g>
+          <g id="foam-right" class="foam" style="display:none">
+            <ellipse cx="600" cy="2" rx="14" ry="4"/><ellipse cx="578" cy="2" rx="12" ry="3.5"/><ellipse cx="560" cy="2" rx="10" ry="3"/>
+          </g>
+        </g>
+      </g>
+
+      <!-- Eau aval -->
+      <g clip-path="url(#clipDown)">
+        <g id="water-downstream" style="transform: translateY(320px)">
+          <rect x="0" y="4" width="900" height="300" fill="url(#water)"/>
+          <path class="wave" fill="#7fd0f3" fill-opacity="0.85" stroke="#e8f8ff" stroke-opacity="0.6"/>
+        </g>
+      </g>
+
+      <!-- Canards (sur l'eau des biefs) -->
+      <g id="ducks">
+        <g transform="translate(40,190)"><g class="swim" style="--r:140px; --d:24s"><g class="duck-bob"><use href="#duckArt" xlink:href="#duckArt"/></g></g></g>
+        <g transform="translate(70,192)"><g class="swim" style="--r:130px; --d:24s; animation-delay:-0.8s"><g class="duck-bob" style="animation-delay:-1s"><use href="#duckArt" xlink:href="#duckArt" transform="scale(0.6)"/></g></g></g>
+        <g transform="translate(120,191)"><g class="swim" style="--r:100px; --d:19s; animation-delay:-9s"><g class="duck-bob"><use href="#duckArt" xlink:href="#duckArt"/></g></g></g>
+        <g transform="translate(680,330)"><g class="swim" style="--r:170px; --d:26s; animation-delay:-4s"><g class="duck-bob"><use href="#duckArt" xlink:href="#duckArt"/></g></g></g>
+        <g transform="translate(770,332)"><g class="swim" style="--r:90px; --d:18s; animation-delay:-8s"><g class="duck-bob" style="animation-delay:-1s"><use href="#duckArt" xlink:href="#duckArt" transform="scale(0.6)"/></g></g></g>
+      </g>
+
+      <!-- Flux d'eau (vannes ouvertes) -->
+      <g id="flow-left" style="display:none">
+        <g clip-path="url(#clipFlowL)">
+          <line class="flow-line" x1="215" y1="352" x2="340" y2="352"/>
+          <line class="flow-line" x1="215" y1="361" x2="340" y2="361" style="animation-duration:0.4s"/>
+          <line class="flow-line" x1="215" y1="370" x2="340" y2="370" style="animation-duration:0.55s"/>
+          <line class="flow-line" x1="215" y1="379" x2="340" y2="379" style="animation-duration:0.45s"/>
+          <line class="flow-line" x1="215" y1="387" x2="340" y2="387" style="animation-duration:0.6s"/>
+        </g>
+      </g>
+      <g id="flow-right" style="display:none">
+        <g clip-path="url(#clipFlowR)">
+          <line class="flow-line" x1="560" y1="352" x2="700" y2="352"/>
+          <line class="flow-line" x1="560" y1="361" x2="700" y2="361" style="animation-duration:0.4s"/>
+          <line class="flow-line" x1="560" y1="370" x2="700" y2="370" style="animation-duration:0.55s"/>
+          <line class="flow-line" x1="560" y1="379" x2="700" y2="379" style="animation-duration:0.45s"/>
+          <line class="flow-line" x1="560" y1="387" x2="700" y2="387" style="animation-duration:0.6s"/>
+        </g>
+      </g>
+
+      <!-- Portes (vantaux en bois) -->
+      <g clip-path="url(#gateClip)">
+        <g transform="translate(262,0)">
+          <g id="gate-left" class="gate" style="transform: translateY(0px)">
+            <line x1="8" y1="-90" x2="8" y2="150" stroke="#263238" stroke-width="2"/>
+            <rect x="0" y="150" width="16" height="250" fill="url(#planks)"/>
+            <rect x="0" y="150" width="3" height="250" fill="#fff" opacity="0.12"/>
+            <rect x="0" y="150" width="16" height="6" fill="#4a3320"/>
+            <g fill="#37474f" stroke="#1c262b">
+              <rect x="-1" y="190" width="18" height="7"/><rect x="-1" y="260" width="18" height="7"/>
+              <rect x="-1" y="320" width="18" height="7"/><rect x="-1" y="392" width="18" height="8"/>
+            </g>
+            <rect x="2" y="350" width="12" height="34" fill="#101418"/>
+            <rect x="1" y="350" width="14" height="34" fill="none" stroke="#263238" stroke-width="1.5"/>
+            <rect id="hatch-left" class="valve-hatch" x="1.5" y="351" width="13" height="32" rx="1.5"/>
+          </g>
+        </g>
+        <g transform="translate(622,0)">
+          <g id="gate-right" class="gate" style="transform: translateY(0px)">
+            <line x1="8" y1="-90" x2="8" y2="150" stroke="#263238" stroke-width="2"/>
+            <rect x="0" y="150" width="16" height="250" fill="url(#planks)"/>
+            <rect x="0" y="150" width="3" height="250" fill="#fff" opacity="0.12"/>
+            <rect x="0" y="150" width="16" height="6" fill="#4a3320"/>
+            <g fill="#37474f" stroke="#1c262b">
+              <rect x="-1" y="190" width="18" height="7"/><rect x="-1" y="260" width="18" height="7"/>
+              <rect x="-1" y="320" width="18" height="7"/><rect x="-1" y="392" width="18" height="8"/>
+            </g>
+            <rect x="2" y="350" width="12" height="34" fill="#101418"/>
+            <rect x="1" y="350" width="14" height="34" fill="none" stroke="#263238" stroke-width="1.5"/>
+            <rect id="hatch-right" class="valve-hatch" x="1.5" y="351" width="13" height="32" rx="1.5"/>
+          </g>
+        </g>
+      </g>
+
+      <!-- Portiques de manœuvre -->
+      <use href="#gantry" xlink:href="#gantry" transform="translate(270,0)"/>
+      <use href="#gantry" xlink:href="#gantry" transform="translate(630,0)"/>
+
+      <!-- Obscurité de la nuit (partie haute) -->
+      <rect class="night-rect" x="0" y="0" width="900" height="400" fill="#050b2a" opacity="0" pointer-events="none"/>
+
+      <!-- Feux de signalisation -->
+      <g id="light-upstream" class="light-red">
+        <rect x="231" y="92" width="5" height="44" fill="#455a64"/>
+        <rect x="222" y="54" width="22" height="46" rx="5" fill="#263238" stroke="#11181c"/>
+        <circle class="lamp lamp-top" cx="233" cy="68" r="6.5"/>
+        <circle class="lamp lamp-bottom" cx="233" cy="87" r="6.5"/>
+        <rect x="224" y="60" width="18" height="2.5" fill="#11181c"/>
+        <rect x="224" y="79" width="18" height="2.5" fill="#11181c"/>
+      </g>
+      <g id="light-downstream" class="light-red">
+        <rect x="663" y="92" width="5" height="44" fill="#455a64"/>
+        <rect x="654" y="54" width="22" height="46" rx="5" fill="#263238" stroke="#11181c"/>
+        <circle class="lamp lamp-top" cx="665" cy="68" r="6.5"/>
+        <circle class="lamp lamp-bottom" cx="665" cy="87" r="6.5"/>
+        <rect x="656" y="60" width="18" height="2.5" fill="#11181c"/>
+        <rect x="656" y="79" width="18" height="2.5" fill="#11181c"/>
+      </g>
+
+      <!-- Lampadaires et fenêtre éclairée (visibles la nuit) -->
+      <g id="lamps">
+        <g transform="translate(160,136)"><rect x="-1.5" y="-34" width="3" height="34" fill="#2b2b2b"/><path d="M-6 -34h12l-3 -5h-6z" fill="#2b2b2b"/><g class="lamp-light" opacity="0"><circle cy="-34" r="34" fill="url(#lampGlow)"/><ellipse cy="-35" rx="4" ry="2.5" fill="#fff3b0"/></g></g>
+        <g transform="translate(395,136)"><rect x="-1.5" y="-34" width="3" height="34" fill="#2b2b2b"/><path d="M-6 -34h12l-3 -5h-6z" fill="#2b2b2b"/><g class="lamp-light" opacity="0"><circle cy="-34" r="34" fill="url(#lampGlow)"/><ellipse cy="-35" rx="4" ry="2.5" fill="#fff3b0"/></g></g>
+        <g transform="translate(505,136)"><rect x="-1.5" y="-34" width="3" height="34" fill="#2b2b2b"/><path d="M-6 -34h12l-3 -5h-6z" fill="#2b2b2b"/><g class="lamp-light" opacity="0"><circle cy="-34" r="34" fill="url(#lampGlow)"/><ellipse cy="-35" rx="4" ry="2.5" fill="#fff3b0"/></g></g>
+        <g transform="translate(820,136)"><rect x="-1.5" y="-34" width="3" height="34" fill="#2b2b2b"/><path d="M-6 -34h12l-3 -5h-6z" fill="#2b2b2b"/><g class="lamp-light" opacity="0"><circle cy="-34" r="34" fill="url(#lampGlow)"/><ellipse cy="-35" rx="4" ry="2.5" fill="#fff3b0"/></g></g>
+        <rect class="lamp-light" x="88" y="108" width="18" height="16" fill="#ffd54f" opacity="0"/>
+      </g>
+
+      <!-- Radier et terre en coupe -->
+      <rect x="0" y="400" width="900" height="40" fill="url(#earth)"/>
+      <rect x="0" y="400" width="900" height="7" fill="#8e8e8e"/>
+      <rect x="0" y="407" width="900" height="2" fill="#5b5b5b"/>
+      <g fill="#3d3124" opacity="0.6">
+        <circle cx="60" cy="424" r="3"/><circle cx="210" cy="430" r="2.5"/><circle cx="380" cy="422" r="3"/>
+        <circle cx="520" cy="431" r="2.5"/><circle cx="690" cy="425" r="3"/><circle cx="850" cy="430" r="2.5"/>
+      </g>
+      <g font-family="Arial" font-size="12" font-weight="bold" fill="#efe3c8" text-anchor="middle" letter-spacing="2">
+        <text x="130" y="429">BIEF AMONT</text>
+        <text x="450" y="429">SAS</text>
+        <text x="770" y="429">BIEF AVAL</text>
+      </g>
+
+      <!-- Obscurité de la nuit (partie basse) -->
+      <rect class="night-rect" x="0" y="400" width="900" height="40" fill="#050b2a" opacity="0" pointer-events="none"/>
+
+      <!-- Légendes (affichées par le bouton) -->
+      <g id="legends" class="legend"></g>
+    </svg>
+  </div>
+
+  <!-- Commandes de l'écluse -->
+  <div class="controls">
+    <button id="btn-valve-left">Vanne Amont (Remplir)</button>
+    <button id="btn-gate-left" disabled>Porte Amont</button>
+    <button id="btn-move-in">Entrer dans le sas</button>
+    <button id="btn-move-out">Sortir du sas</button>
+    <button id="btn-gate-right" disabled>Porte Aval</button>
+    <button id="btn-valve-right">Vanne Aval (Vider)</button>
+  </div>
+
+  </div><!-- fin .main -->
+  </div><!-- fin .layout -->
+
+  <script>
+    /* ---------- Constantes et état ---------- */
+    const BED = 400;               // y du fond
+    const levelHigh = 220;         // hauteur d'eau haute (5,50 m)
+    const levelLow = 80;           // hauteur d'eau basse (2,00 m)
+    const PX_PER_M = 40;
+    const GATE_DROP = 200;         // abaissement d'une porte ouverte
+
+    let currentChamberLevel = levelLow;
+    let gateLeftOpen = false;
+    let gateRightOpen = false;
+    let valveLeftOpen = false;
+    let valveRightOpen = false;
+    let waterInterval = null;
+
+    let multi = false;             // false = 1 bateau ; true = plusieurs bateaux
+    let boatScale = 1;
+    let boats = [];
+    let banks = { up: [], down: [] };   // files d'attente (le premier est le plus proche de la porte)
+    let occupants = [null];             // emplacements dans le sas
+    let passed = 0;
+    let generation = 0;                 // permet d'ignorer les actions différées après une réinitialisation
+    let teleporting = false;
+    let legendsOn = false;
+
+    const $ = (id) => document.getElementById(id);
+    const NS = 'http://www.w3.org/2000/svg';
+    const XLINK = 'http://www.w3.org/1999/xlink';
+    const chamberWater = $('water-chamber');
+    const upstreamWater = $('water-upstream');
+    const downstreamWater = $('water-downstream');
+    const boatsLayer = $('boats');
+    const gateLeft = $('gate-left');
+    const gateRight = $('gate-right');
+    const hatchLeft = $('hatch-left');
+    const hatchRight = $('hatch-right');
+    const flowLeft = $('flow-left');
+    const flowRight = $('flow-right');
+    const foamLeft = $('foam-left');
+    const foamRight = $('foam-right');
+    const lightUpstream = $('light-upstream');
+    const lightDownstream = $('light-downstream');
+    const scene = $('scene');
+
+    /* ---------- Sons (générés par le navigateur) ---------- */
+    let actx = null, master = null, noiseBuf = null, water = null, soundOn = true;
+
+    function ensureAudio() {
+      if (!actx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        actx = new AC();
+        master = actx.createGain();
+        master.gain.value = soundOn ? 0.9 : 0;
+        master.connect(actx.destination);
+        const len = actx.sampleRate * 2;
+        noiseBuf = actx.createBuffer(1, len, actx.sampleRate);
+        const d = noiseBuf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      }
+      if (actx.state === 'suspended') actx.resume();
+    }
+
+    function tone(type, f0, f1, dur, vol, delay, lowpass) {
+      if (!actx) return;
+      const t = actx.currentTime + (delay || 0);
+      const o = actx.createOscillator();
+      const g = actx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, t);
+      if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      if (lowpass) {
+        const f = actx.createBiquadFilter();
+        f.type = 'lowpass';
+        f.frequency.value = lowpass;
+        o.connect(f); f.connect(g);
+      } else {
+        o.connect(g);
+      }
+      g.connect(master);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    }
+
+    function noiseBurst(dur, freq, vol) {
+      if (!actx) return;
+      const t = actx.currentTime;
+      const s = actx.createBufferSource();
+      s.buffer = noiseBuf;
+      const f = actx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = freq;
+      f.Q.value = 1;
+      const g = actx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      s.connect(f); f.connect(g); g.connect(master);
+      s.start(t);
+      s.stop(t + dur + 0.05);
+    }
+
+    function startWater() {
+      if (!actx || water) return;
+      const s = actx.createBufferSource();
+      s.buffer = noiseBuf;
+      s.loop = true;
+      const f = actx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = 700;
+      f.Q.value = 0.6;
+      const g = actx.createGain();
+      g.gain.value = 0;
+      const lfo = actx.createOscillator();
+      lfo.frequency.value = 0.8;
+      const lg = actx.createGain();
+      lg.gain.value = 250;
+      lfo.connect(lg); lg.connect(f.frequency);
+      s.connect(f); f.connect(g); g.connect(master);
+      g.gain.linearRampToValueAtTime(0.35, actx.currentTime + 0.4);
+      s.start(); lfo.start();
+      water = { s: s, g: g, lfo: lfo };
+    }
+
+    function stopWater() {
+      if (!water || !actx) return;
+      const w = water;
+      water = null;
+      const t = actx.currentTime;
+      w.g.gain.cancelScheduledValues(t);
+      w.g.gain.setValueAtTime(w.g.gain.value, t);
+      w.g.gain.linearRampToValueAtTime(0, t + 0.4);
+      w.s.stop(t + 0.45);
+      w.lfo.stop(t + 0.45);
+    }
+
+    function thunkSound() { tone('sine', 140, 50, 0.2, 0.5); noiseBurst(0.15, 400, 0.15); }
+    function creakSound() { tone('sawtooth', 75, 42, 0.7, 0.18, 0, 320); noiseBurst(0.6, 220, 0.12); }
+    function chimeSound(green) {
+      if (green) { tone('sine', 784, 784, 0.3, 0.3); tone('sine', 1047, 1047, 0.4, 0.3, 0.18); }
+      else { tone('sine', 523, 523, 0.3, 0.3); tone('sine', 392, 392, 0.4, 0.3, 0.18); }
+    }
+    function dingSound() { tone('sine', 988, 988, 0.6, 0.3); }
+    function engineSound() { tone('sawtooth', 48, 62, 1.3, 0.12, 0, 180); }
+    function hornSound() { tone('triangle', 233, 233, 0.45, 0.25, 0, 900); tone('triangle', 175, 175, 0.45, 0.2, 0.05, 900); }
+    function victorySound() { [523, 659, 784, 1047].forEach((f, i) => tone('sine', f, f, 0.35, 0.3, i * 0.15)); }
+
+    /* ---------- Légendes ---------- */
+    function legendMarkup(text, px, py, tx, ty) {
+      const w = text.length * 6.4 + 16;
+      let out = '';
+      if (tx !== undefined) {
+        let sx, sy;
+        if (Math.abs(tx - px) - w / 2 > Math.abs(ty - py)) {
+          sx = px + (tx > px ? 1 : -1) * w / 2; sy = py;
+        } else {
+          sx = px; sy = py + (ty > py ? 9 : -9);
+        }
+        out += '<line x1="' + sx + '" y1="' + sy + '" x2="' + tx + '" y2="' + ty + '" stroke="#263238" stroke-width="3.5" stroke-linecap="round"/>' +
+               '<line x1="' + sx + '" y1="' + sy + '" x2="' + tx + '" y2="' + ty + '" stroke="#fffde7" stroke-width="1.5" stroke-linecap="round"/>' +
+               '<circle cx="' + tx + '" cy="' + ty + '" r="3.5" fill="#fffde7" stroke="#263238" stroke-width="1.5"/>';
+      }
+      out += '<rect x="' + (px - w / 2) + '" y="' + (py - 9) + '" width="' + w + '" height="18" rx="9" fill="#fffde7" stroke="#263238" stroke-width="1.5"/>' +
+             '<text x="' + px + '" y="' + (py + 4) + '" text-anchor="middle" font-size="12" font-family="Arial" font-weight="bold" fill="#263238">' + text + '</text>';
+      return out;
+    }
+
+    const legendData = [
+      ['Maison de l\'éclusier', 75, 36, 82, 66],
+      ['Feu amont', 182, 36, 222, 70],
+      ['Portique de manœuvre', 340, 36, 288, 84],
+      ['Feu aval', 740, 72, 676, 76],
+      ['Échelle', 345, 118, 345, 168],
+      ['Échelle de niveau', 500, 118, 430, 180],
+      ['Borne d\'amarrage', 590, 108, 577, 136],
+      ['Bief amont', 110, 250],
+      ['Porte amont', 150, 330, 264, 335],
+      ['Vanne amont', 150, 372, 264, 368],
+      ['Sas', 450, 372],
+      ['Porte aval', 735, 350, 637, 345],
+      ['Vanne aval', 735, 378, 637, 368],
+      ['Bief aval', 800, 240]
+    ];
+    $('legends').innerHTML = legendData.map(d => legendMarkup(d[0], d[1], d[2], d[3], d[4])).join('');
+
+    /* ---------- Eau ---------- */
+    function wavePath() {
+      let d = 'M-60 4 q15 -6 30 0';
+      for (let i = 0; i < 34; i++) d += ' t30 0';
+      return d + ' L1000 10 L-60 10 Z';
+    }
+    document.querySelectorAll('.wave').forEach(p => p.setAttribute('d', wavePath()));
+
+    function setSurface(el, level) {
+      el.style.transform = 'translateY(' + (BED - level) + 'px)';
+    }
+    setSurface(upstreamWater, levelHigh);
+    setSurface(downstreamWater, levelLow);
+
+    function fmt(level) { return (level / PX_PER_M).toFixed(2).replace('.', ',') + ' m'; }
+
+    function updateLevels() {
+      $('val-up').textContent = fmt(levelHigh);
+      $('val-down').textContent = fmt(levelLow);
+      let trend = '';
+      if (valveLeftOpen && currentChamberLevel < levelHigh) trend = ' ▲';
+      else if (valveRightOpen && currentChamberLevel > levelLow) trend = ' ▼';
+      $('val-ch').textContent = fmt(currentChamberLevel) + trend;
+      $('bar-up').style.width = (levelHigh / 240 * 100) + '%';
+      $('bar-down').style.width = (levelLow / 240 * 100) + '%';
+      $('bar-ch').style.width = (currentChamberLevel / 240 * 100) + '%';
+    }
+
+    function updateCounter() {
+      $('counter').style.display = multi ? 'block' : 'none';
+      const total = boats.length;
+      $('count').textContent = (passed === total && total > 0) ? '✔ Terminé !' : (passed + ' / ' + total);
+    }
+
+    /* ---------- Bateaux ---------- */
+    function mk(tag, attrs, parent) {
+      const e = document.createElementNS(NS, tag);
+      for (const k in attrs) e.setAttribute(k, attrs[k]);
+      if (parent) parent.appendChild(e);
+      return e;
+    }
+
+    function boatW() { return 148 * boatScale; }
+    function slotsX() { return multi ? [288, 494] : [450 - 74]; }
+    function bankX(side, q) {
+      return side === 'up' ? (248 - boatW() - q * (boatW() + 8)) : (652 + q * (boatW() + 8));
+    }
+
+    function createBoat(hull, stripe, side, withLegend) {
+      const gx = mk('g', { 'class': 'boat-x' });
+      const gy = mk('g', { 'class': 'boat-y' }, gx);
+      const bob = mk('g', { 'class': 'bob' }, gy);
+      bob.style.animationDelay = (-Math.random() * 3) + 's';
+      const sc = mk('g', { transform: 'scale(' + boatScale + ')' }, bob);
+      const u = mk('use', { href: '#boatArt' }, sc);
+      u.setAttributeNS(XLINK, 'xlink:href', '#boatArt');
+      u.setAttribute('style', '--hull:' + hull + ';--stripe:' + stripe);
+      if (withLegend) {
+        const lg = mk('g', { 'class': 'legend' }, gy);
+        lg.innerHTML = legendMarkup('Péniche', 70, -100, 70, -58);
+      }
+      boatsLayer.appendChild(gx);
+      return { x: gx, y: gy, side: side, slot: null, exit: null, gone: false };
+    }
+
+    function levelOf(b) {
+      if (b.side === 'up') return levelHigh;
+      if (b.side === 'down') return levelLow;
+      if (b.side === 'ch') return currentChamberLevel;
+      return b.exit === 'up' ? levelHigh : levelLow;
+    }
+
+    function updateBoatHeights() {
+      boats.forEach(b => {
+        if (b.gone) return;
+        const off = b.side === 'out' ? 10 : 0;
+        b.y.style.transform = 'translateY(' + (BED - levelOf(b) + off) + 'px)';
+      });
+    }
+
+    function layoutBoats() {
+      banks.up.forEach((b, q) => { b.x.style.transform = 'translateX(' + bankX('up', q) + 'px)'; });
+      banks.down.forEach((b, q) => { b.x.style.transform = 'translateX(' + bankX('down', q) + 'px)'; });
+      occupants.forEach((b, i) => { if (b) b.x.style.transform = 'translateX(' + slotsX()[i] + 'px)'; });
+      updateBoatHeights();
+    }
+
+    function enterInfo() {
+      const side = gateLeftOpen ? 'up' : (gateRightOpen ? 'down' : null);
+      if (!side) return null;
+      const q = banks[side];
+      if (!q.length) return null;
+      const n = slotsX().length;
+      const idx = []; for (let i = 0; i < n; i++) idx.push(i);
+      const order = side === 'up' ? idx : idx.reverse();
+      let chosen = -1;
+      for (const i of order) { if (occupants[i]) break; chosen = i; }
+      if (chosen < 0) return null;
+      return { side: side, boat: q[0], slot: chosen };
+    }
+
+    function exitInfo() {
+      const side = gateLeftOpen ? 'up' : (gateRightOpen ? 'down' : null);
+      if (!side) return null;
+      const n = slotsX().length;
+      const idx = []; for (let i = 0; i < n; i++) idx.push(i);
+      const order = side === 'up' ? idx : idx.reverse();
+      for (const i of order) { if (occupants[i]) return { side: side, boat: occupants[i], slot: i }; }
+      return null;
+    }
+
+    function moveBoat(direction) {
+      if (direction === 'in') {
+        const info = enterInfo();
+        if (!info) return;
+        banks[info.side].shift();
+        occupants[info.slot] = info.boat;
+        info.boat.side = 'ch';
+        info.boat.slot = info.slot;
+        info.boat.x.style.transitionDuration = '';
+        layoutBoats();
+        engineSound();
+        hornSound();
+      } else {
+        const info = exitInfo();
+        if (!info) return;
+        const b = info.boat;
+        occupants[info.slot] = null;
+        engineSound();
+        if (multi) {
+          b.side = 'out';
+          b.exit = info.side;
+          boatsLayer.appendChild(b.x);          // passe devant les bateaux qui attendent
+          b.x.style.transitionDuration = '2.4s';
+          b.x.style.transform = 'translateX(' + (info.side === 'up' ? -220 : 960) + 'px)';
+          updateBoatHeights();
+          const gen = generation;
+          setTimeout(() => {
+            if (gen !== generation) return;
+            b.gone = true;
+            b.x.style.display = 'none';
+            passed++;
+            updateCounter();
+            if (passed === boats.length) victorySound();
+          }, 2400);
+        } else {
+          b.side = info.side;
+          b.slot = null;
+          banks[info.side].unshift(b);
+          layoutBoats();
+        }
+      }
+      updateButtons();
+    }
+
+    /* ---------- Portes, vannes, feux ---------- */
+    function updateTrafficLights() {
+      lightUpstream.classList.toggle('light-green', gateLeftOpen);
+      lightUpstream.classList.toggle('light-red', !gateLeftOpen);
+      lightDownstream.classList.toggle('light-green', gateRightOpen);
+      lightDownstream.classList.toggle('light-red', !gateRightOpen);
+    }
+
+    function showFlow() {
+      flowLeft.style.display = valveLeftOpen ? 'block' : 'none';
+      foamLeft.style.display = valveLeftOpen ? 'block' : 'none';
+      flowRight.style.display = valveRightOpen ? 'block' : 'none';
+      foamRight.style.display = valveRightOpen ? 'block' : 'none';
+      hatchLeft.classList.toggle('open', valveLeftOpen);
+      hatchRight.classList.toggle('open', valveRightOpen);
+    }
+
+    function toggleValve(side) {
+      if (gateLeftOpen || gateRightOpen) return;
+
+      clearInterval(waterInterval);
+
+      if (side === 'left') {
+        valveLeftOpen = !valveLeftOpen;
+        if (valveLeftOpen) valveRightOpen = false;
+      } else {
+        valveRightOpen = !valveRightOpen;
+        if (valveRightOpen) valveLeftOpen = false;
+      }
+      showFlow();
+      thunkSound();
+
+      const targetLevel = valveLeftOpen ? levelHigh : (valveRightOpen ? levelLow : currentChamberLevel);
+
+      if (valveLeftOpen || valveRightOpen) {
+        startWater();
+        waterInterval = setInterval(() => {
+          if (currentChamberLevel < targetLevel) {
+            currentChamberLevel += 1;
+          } else if (currentChamberLevel > targetLevel) {
+            currentChamberLevel -= 1;
+          } else {
+            clearInterval(waterInterval);
+            valveLeftOpen = false;
+            valveRightOpen = false;
+            showFlow();
+            stopWater();
+            dingSound();
+          }
+          setSurface(chamberWater, currentChamberLevel);
+          updateBoatHeights();
+          updateLevels();
+          updateButtons();
+        }, 30);
+      } else {
+        stopWater();
+        updateLevels();
+        updateButtons();
+      }
+    }
+
+    function toggleGate(side) {
+      if (side === 'left') {
+        if (currentChamberLevel !== levelHigh || gateRightOpen) return;
+        gateLeftOpen = !gateLeftOpen;
+        gateLeft.style.transform = 'translateY(' + (gateLeftOpen ? GATE_DROP : 0) + 'px)';
+        chimeSound(gateLeftOpen);
+      } else {
+        if (currentChamberLevel !== levelLow || gateLeftOpen) return;
+        gateRightOpen = !gateRightOpen;
+        gateRight.style.transform = 'translateY(' + (gateRightOpen ? GATE_DROP : 0) + 'px)';
+        chimeSound(gateRightOpen);
+      }
+      creakSound();
+      updateTrafficLights();
+      setTimeout(updateButtons, 550);
+    }
+
+    /* ---------- Sens du bateau (mode 1 bateau) ---------- */
+    function updateDirButton() {
+      const btn = $('btn-dir');
+      btn.style.display = multi ? 'none' : '';
+      if (multi || !boats.length) return;
+      const b = boats[0];
+      if (b.side === 'up') btn.textContent = 'Changer de sens (actuel : descente ↓)';
+      else if (b.side === 'down') btn.textContent = 'Changer de sens (actuel : montée ↑)';
+      else btn.textContent = 'Sens : passage en cours';
+    }
+
+    function toggleDirection() {
+      if (multi || teleporting) return;
+      const b = boats[0];
+      if (b.side === 'ch' || gateLeftOpen || gateRightOpen || valveLeftOpen || valveRightOpen) return;
+      teleporting = true;
+      updateButtons();
+      b.x.style.opacity = 0;
+      const gen = generation;
+      setTimeout(() => {
+        if (gen !== generation) return;
+        const from = b.side;
+        const to = from === 'up' ? 'down' : 'up';
+        banks[from] = [];
+        banks[to] = [b];
+        b.side = to;
+        b.x.style.transition = 'none';
+        layoutBoats();
+        b.x.getBoundingClientRect();
+        b.x.style.transition = '';
+        b.x.style.opacity = 1;
+        teleporting = false;
+        updateButtons();
+      }, 450);
+    }
+
+    /* ---------- Réinitialisation / modes ---------- */
+    function resetAll(newMulti) {
+      if (typeof newMulti === 'boolean') multi = newMulti;
+      generation++;
+      clearInterval(waterInterval);
+      stopWater();
+      teleporting = false;
+
+      currentChamberLevel = levelLow;
+      gateLeftOpen = false; gateRightOpen = false;
+      valveLeftOpen = false; valveRightOpen = false;
+      gateLeft.style.transform = 'translateY(0px)';
+      gateRight.style.transform = 'translateY(0px)';
+      showFlow();
+      updateTrafficLights();
+      setSurface(chamberWater, currentChamberLevel);
+
+      boats.forEach(b => b.x.remove());
+      boats = [];
+      banks = { up: [], down: [] };
+      passed = 0;
+      boatScale = multi ? 0.8 : 1;
+      occupants = multi ? [null, null] : [null];
+
+      if (multi) {
+        const a = createBoat('#1f3a5f', '#c62828', 'up', true);
+        const b = createBoat('#7b2d26', '#f5f5f5', 'up', false);
+        const c = createBoat('#2e5e3e', '#ffd54f', 'down', false);
+        const d = createBoat('#5a4a8a', '#ff7043', 'down', false);
+        boats = [a, b, c, d];
+        banks.up = [a, b];
+        banks.down = [c, d];
+      } else {
+        const a = createBoat('#1f3a5f', '#c62828', 'up', true);
+        boats = [a];
+        banks.up = [a];
+      }
+      layoutBoats();
+
+      $('btn-mode').textContent = multi ? 'Retour à 1 bateau' : 'Étape 2 : plusieurs bateaux';
+      $('btn-mode').classList.toggle('active', multi);
+      updateLevels();
+      updateCounter();
+      updateDirButton();
+      updateButtons();
+    }
+
+    /* ---------- Boutons grisés ---------- */
+    function updateButtons() {
+      $('btn-gate-left').disabled = (currentChamberLevel !== levelHigh || gateRightOpen || valveLeftOpen || valveRightOpen);
+      $('btn-gate-right').disabled = (currentChamberLevel !== levelLow || gateLeftOpen || valveLeftOpen || valveRightOpen);
+
+      $('btn-valve-left').disabled = (gateLeftOpen || gateRightOpen);
+      $('btn-valve-right').disabled = (gateLeftOpen || gateRightOpen);
+
+      $('btn-move-in').disabled = !enterInfo();
+      $('btn-move-out').disabled = !exitInfo();
+
+      updateDirButton();
+      const b = boats[0];
+      $('btn-dir').disabled = multi || teleporting || !b || b.side === 'ch' ||
+        gateLeftOpen || gateRightOpen || valveLeftOpen || valveRightOpen;
+    }
+
+    /* ---------- Gestion hybride Souris / Tactile (iPad) ---------- */
+    function attachButtonAction(id, action) {
+      const btn = $(id);
+
+      const handleAction = (e) => {
+        ensureAudio();
+        if (btn.disabled) return;
+        e.preventDefault();
+        action();
+      };
+
+      btn.addEventListener('pointerdown', handleAction);
+      btn.addEventListener('click', (e) => e.preventDefault());
+    }
+
+    attachButtonAction('btn-valve-left', () => toggleValve('left'));
+    attachButtonAction('btn-gate-left', () => toggleGate('left'));
+    attachButtonAction('btn-move-in', () => moveBoat('in'));
+    attachButtonAction('btn-move-out', () => moveBoat('out'));
+    attachButtonAction('btn-gate-right', () => toggleGate('right'));
+    attachButtonAction('btn-valve-right', () => toggleValve('right'));
+
+    attachButtonAction('btn-reset', () => resetAll());
+    attachButtonAction('btn-dir', () => toggleDirection());
+    attachButtonAction('btn-mode', () => resetAll(!multi));
+    attachButtonAction('btn-legend', () => {
+      legendsOn = !legendsOn;
+      scene.classList.toggle('show-legends', legendsOn);
+      $('btn-legend').textContent = legendsOn ? 'Masquer les légendes' : 'Afficher les légendes';
+      $('btn-legend').classList.toggle('active', legendsOn);
+    });
+    attachButtonAction('btn-sound', () => {
+      soundOn = !soundOn;
+      if (master) master.gain.value = soundOn ? 0.9 : 0;
+      $('btn-sound').textContent = soundOn ? '🔊 Son activé' : '🔇 Son coupé';
+    });
+
+    /* ---------- Décor : cycle jour / nuit ---------- */
+    const CYCLE_SEC = 240;         // durée d'une journée complète
+    let tod = 0.40;                // heure : 0 = minuit, 0.25 = lever, 0.5 = midi, 0.75 = coucher
+    let cycleOn = true;
+
+    const skyTop = $('sky-top'), skyBot = $('sky-bot');
+    const sunG = $('sun-g'), moonG = $('moon-g'), starsG = $('stars'), birdsG = $('birds');
+    const nightRects = document.querySelectorAll('.night-rect');
+    const lampLights = document.querySelectorAll('.lamp-light');
+
+    const C = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+    const mixc = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+    const css = (c) => 'rgb(' + c.map(Math.round).join(',') + ')';
+    function smooth(a, b, x) {
+      const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    }
+
+    // Étoiles
+    (function makeStars() {
+      let seed = 7;
+      const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+      for (let i = 0; i < 40; i++) {
+        const c = mk('circle', {
+          cx: (rnd() * 900).toFixed(1), cy: (4 + rnd() * 100).toFixed(1),
+          r: (0.6 + rnd() * 0.9).toFixed(2), fill: '#fff', 'class': 'star'
+        }, starsG);
+        c.style.animationDelay = (-rnd() * 4) + 's';
+      }
+    })();
+
+    function applyTime() {
+      const s = Math.sin(2 * Math.PI * (tod - 0.25));      // 1 à midi, -1 à minuit
+      const day = smooth(-0.2, 0.3, s);                    // 0 = nuit, 1 = jour
+      const warm = Math.max(0, 1 - Math.abs(s) / 0.35) * 0.75;   // teinte de l'aube et du crépuscule
+
+      let top = mixc(C('#0b1433'), C('#5fa8e6'), day);
+      let bot = mixc(C('#1d2b55'), C('#d4ecf8'), day);
+      top = mixc(top, C('#6a4f9a'), warm);
+      bot = mixc(bot, C('#ffa45c'), warm);
+      skyTop.setAttribute('stop-color', css(top));
+      skyBot.setAttribute('stop-color', css(bot));
+
+      // Soleil : se lève à gauche, se couche à droite
+      const p = (tod - 0.25) / 0.5;
+      sunG.setAttribute('transform', 'translate(' + (60 + 780 * p).toFixed(1) + ',' + (135 - 95 * Math.sin(Math.PI * p)).toFixed(1) + ')');
+
+      // Lune
+      const nt = tod >= 0.75 ? tod - 0.75 : tod + 0.25;
+      const q = nt / 0.5;
+      moonG.setAttribute('transform', 'translate(' + (60 + 780 * q).toFixed(1) + ',' + (135 - 95 * Math.sin(Math.PI * q)).toFixed(1) + ')');
+
+      starsG.setAttribute('opacity', (1 - day).toFixed(2));
+      birdsG.setAttribute('opacity', day.toFixed(2));
+      nightRects.forEach(r => r.setAttribute('opacity', (0.42 * (1 - day)).toFixed(3)));
+      lampLights.forEach(l => l.setAttribute('opacity', (1 - day).toFixed(2)));
+    }
+
+    let lastTick = performance.now();
+    setInterval(() => {
+      const now = performance.now();
+      const dt = (now - lastTick) / 1000;
+      lastTick = now;
+      if (cycleOn) {
+        tod = (tod + dt / CYCLE_SEC) % 1;
+        applyTime();
+      }
+    }, 200);
+
+    attachButtonAction('btn-cycle', () => {
+      cycleOn = !cycleOn;
+      if (!cycleOn) { tod = 0.5; applyTime(); }
+      $('btn-cycle').textContent = cycleOn ? '🌗 Jour/nuit : activé' : '☀️ Jour/nuit : figé';
+      $('btn-cycle').classList.toggle('active', !cycleOn);
+    });
+
+    applyTime();
+    resetAll(false);
+  </script>
+</body>
+</html>
